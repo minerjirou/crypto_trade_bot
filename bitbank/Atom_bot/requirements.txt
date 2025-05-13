@@ -1,0 +1,3 @@
+pybotters
+pandas
+python-dotenv
