@@ -10,7 +10,18 @@ from pathlib import Path
 from typing import Any
 
 from crypto_bot.core.events import AgentNote, RecordedEvent, RunRecord
-from crypto_bot.core.models import ExecutionPlan, FeatureSnapshot, RiskDecision, SignalCandidate
+from crypto_bot.core.models import (
+    ExecutionPlan,
+    FeatureSnapshot,
+    FillEvent,
+    OrderAck,
+    OrderIntent,
+    PnLSnapshot,
+    PositionState,
+    RiskDecision,
+    SignalCandidate,
+    TradeOutcome,
+)
 
 
 class SqliteRecorder:
@@ -84,10 +95,91 @@ class SqliteRecorder:
             """
         )
         self._conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_signal_journal_run_time ON signal_journal(run_id, observed_at)"
+            """
+            CREATE TABLE IF NOT EXISTS order_acks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                run_id TEXT NOT NULL,
+                symbol TEXT NOT NULL,
+                client_order_id TEXT NOT NULL,
+                exchange_order_id TEXT NOT NULL,
+                side TEXT NOT NULL,
+                price TEXT NOT NULL,
+                size TEXT NOT NULL,
+                reduce_only INTEGER NOT NULL,
+                post_only INTEGER NOT NULL,
+                status TEXT NOT NULL,
+                accepted_at TEXT NOT NULL,
+                meta_json TEXT NOT NULL
+            )
+            """
         )
         self._conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_signal_journal_symbol ON signal_journal(symbol, observed_at)"
+            """
+            CREATE TABLE IF NOT EXISTS fills (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                run_id TEXT NOT NULL,
+                client_order_id TEXT NOT NULL,
+                exchange_order_id TEXT NOT NULL,
+                symbol TEXT NOT NULL,
+                side TEXT NOT NULL,
+                fill_price TEXT NOT NULL,
+                fill_size TEXT NOT NULL,
+                fee_paid TEXT NOT NULL,
+                liquidity TEXT NOT NULL,
+                reduce_only INTEGER NOT NULL,
+                meta_json TEXT NOT NULL,
+                filled_at TEXT NOT NULL
+            )
+            """
+        )
+        self._conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS position_snapshots (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                run_id TEXT NOT NULL,
+                symbol TEXT NOT NULL,
+                side TEXT NOT NULL,
+                size TEXT NOT NULL,
+                entry_price TEXT NOT NULL,
+                mark_price TEXT NOT NULL,
+                unrealized_pnl TEXT NOT NULL,
+                opened_at TEXT NOT NULL,
+                recorded_at TEXT NOT NULL
+            )
+            """
+        )
+        self._conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS pnl_snapshots (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                run_id TEXT NOT NULL,
+                realized_pnl TEXT NOT NULL,
+                unrealized_pnl TEXT NOT NULL,
+                fees_paid TEXT NOT NULL,
+                recorded_at TEXT NOT NULL
+            )
+            """
+        )
+        self._conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS trade_outcomes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                run_id TEXT NOT NULL,
+                symbol TEXT NOT NULL,
+                side TEXT NOT NULL,
+                entry_price TEXT NOT NULL,
+                exit_price TEXT NOT NULL,
+                size TEXT NOT NULL,
+                gross_pnl TEXT NOT NULL,
+                net_pnl TEXT NOT NULL,
+                entry_fees_paid TEXT NOT NULL,
+                exit_fees_paid TEXT NOT NULL,
+                exit_reason TEXT NOT NULL,
+                opened_at TEXT NOT NULL,
+                closed_at TEXT NOT NULL,
+                holding_seconds INTEGER NOT NULL
+            )
+            """
         )
         self._conn.execute(
             """
@@ -103,8 +195,15 @@ class SqliteRecorder:
             """
         )
         self._conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_agent_notes_run_time ON agent_notes(run_id, created_at)"
+            "CREATE INDEX IF NOT EXISTS idx_signal_journal_run_time ON signal_journal(run_id, observed_at)"
         )
+        self._conn.execute("CREATE INDEX IF NOT EXISTS idx_fills_run_time ON fills(run_id, filled_at)")
+        self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_trade_outcomes_run_time ON trade_outcomes(run_id, closed_at)"
+        )
+
+    def close(self) -> None:
+        self._conn.close()
 
     def record(self, event: RecordedEvent) -> None:
         self._conn.execute(
@@ -235,6 +334,127 @@ class SqliteRecorder:
         )
         self._conn.commit()
 
+    def record_order_ack(
+        self,
+        *,
+        run_id: str,
+        symbol: str,
+        ack: OrderAck,
+        intent: OrderIntent,
+    ) -> None:
+        self._conn.execute(
+            """
+            INSERT INTO order_acks(
+                run_id, symbol, client_order_id, exchange_order_id, side, price, size,
+                reduce_only, post_only, status, accepted_at, meta_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                run_id,
+                symbol,
+                ack.client_order_id,
+                ack.exchange_order_id,
+                intent.side.value,
+                str(intent.price),
+                str(intent.size),
+                int(intent.reduce_only),
+                int(intent.post_only),
+                ack.status,
+                ack.accepted_at.isoformat(),
+                json.dumps(self._serialize(intent.meta), ensure_ascii=True),
+            ),
+        )
+        self._conn.commit()
+
+    def record_fill(self, *, run_id: str, fill: FillEvent) -> None:
+        self._conn.execute(
+            """
+            INSERT INTO fills(
+                run_id, client_order_id, exchange_order_id, symbol, side, fill_price, fill_size,
+                fee_paid, liquidity, reduce_only, meta_json, filled_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                run_id,
+                fill.client_order_id,
+                fill.exchange_order_id,
+                fill.symbol,
+                fill.side.value,
+                str(fill.fill_price),
+                str(fill.fill_size),
+                str(fill.fee_paid),
+                fill.liquidity,
+                int(fill.reduce_only),
+                json.dumps(self._serialize(fill.meta), ensure_ascii=True),
+                fill.filled_at.isoformat(),
+            ),
+        )
+        self._conn.commit()
+
+    def record_position_snapshot(self, *, run_id: str, position: PositionState, recorded_at: datetime) -> None:
+        self._conn.execute(
+            """
+            INSERT INTO position_snapshots(
+                run_id, symbol, side, size, entry_price, mark_price, unrealized_pnl, opened_at, recorded_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                run_id,
+                position.symbol,
+                position.side.value,
+                str(position.size),
+                str(position.entry_price),
+                str(position.mark_price),
+                str(position.unrealized_pnl),
+                position.opened_at.isoformat(),
+                recorded_at.isoformat(),
+            ),
+        )
+        self._conn.commit()
+
+    def record_pnl_snapshot(self, *, run_id: str, pnl: PnLSnapshot) -> None:
+        self._conn.execute(
+            """
+            INSERT INTO pnl_snapshots(run_id, realized_pnl, unrealized_pnl, fees_paid, recorded_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (
+                run_id,
+                str(pnl.realized_pnl),
+                str(pnl.unrealized_pnl),
+                str(pnl.fees_paid),
+                pnl.recorded_at.isoformat(),
+            ),
+        )
+        self._conn.commit()
+
+    def record_trade_outcome(self, *, run_id: str, outcome: TradeOutcome) -> None:
+        self._conn.execute(
+            """
+            INSERT INTO trade_outcomes(
+                run_id, symbol, side, entry_price, exit_price, size, gross_pnl, net_pnl,
+                entry_fees_paid, exit_fees_paid, exit_reason, opened_at, closed_at, holding_seconds
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                run_id,
+                outcome.symbol,
+                outcome.side.value,
+                str(outcome.entry_price),
+                str(outcome.exit_price),
+                str(outcome.size),
+                str(outcome.gross_pnl),
+                str(outcome.net_pnl),
+                str(outcome.entry_fees_paid),
+                str(outcome.exit_fees_paid),
+                outcome.exit_reason.value,
+                outcome.opened_at.isoformat(),
+                outcome.closed_at.isoformat(),
+                outcome.holding_seconds,
+            ),
+        )
+        self._conn.commit()
+
     def add_agent_note(self, note: AgentNote) -> None:
         self._conn.execute(
             """
@@ -252,34 +472,50 @@ class SqliteRecorder:
         )
         self._conn.commit()
 
-    def build_analysis_bundle(self, run_id: str, limit: int = 200) -> dict[str, Any]:
-        run_row = self._conn.execute("SELECT * FROM runs WHERE run_id = ?", (run_id,)).fetchone()
-        journal_rows = self._conn.execute(
-            """
-            SELECT * FROM signal_journal
-            WHERE run_id = ?
-            ORDER BY observed_at ASC
-            LIMIT ?
-            """,
-            (run_id, limit),
-        ).fetchall()
-        note_rows = self._conn.execute(
-            """
-            SELECT * FROM agent_notes
-            WHERE run_id = ?
-            ORDER BY created_at ASC
-            LIMIT ?
-            """,
-            (run_id, limit),
-        ).fetchall()
+    def build_analysis_bundle(self, run_id: str, limit: int = 500) -> dict[str, Any]:
         return {
-            "run": None if run_row is None else self._decode_row(dict(run_row)),
-            "journal": [self._decode_row(dict(row)) for row in journal_rows],
-            "notes": [self._decode_row(dict(row)) for row in note_rows],
+            "run": self._fetch_one("SELECT * FROM runs WHERE run_id = ?", (run_id,)),
+            "journal": self._fetch_many(
+                "SELECT * FROM signal_journal WHERE run_id = ? ORDER BY observed_at ASC LIMIT ?",
+                (run_id, limit),
+            ),
+            "orders": self._fetch_many(
+                "SELECT * FROM order_acks WHERE run_id = ? ORDER BY accepted_at ASC LIMIT ?",
+                (run_id, limit),
+            ),
+            "fills": self._fetch_many(
+                "SELECT * FROM fills WHERE run_id = ? ORDER BY filled_at ASC LIMIT ?",
+                (run_id, limit),
+            ),
+            "positions": self._fetch_many(
+                "SELECT * FROM position_snapshots WHERE run_id = ? ORDER BY recorded_at ASC LIMIT ?",
+                (run_id, limit),
+            ),
+            "pnl": self._fetch_many(
+                "SELECT * FROM pnl_snapshots WHERE run_id = ? ORDER BY recorded_at ASC LIMIT ?",
+                (run_id, limit),
+            ),
+            "outcomes": self._fetch_many(
+                "SELECT * FROM trade_outcomes WHERE run_id = ? ORDER BY closed_at ASC LIMIT ?",
+                (run_id, limit),
+            ),
+            "notes": self._fetch_many(
+                "SELECT * FROM agent_notes WHERE run_id = ? ORDER BY created_at ASC LIMIT ?",
+                (run_id, limit),
+            ),
         }
 
-    def close(self) -> None:
-        self._conn.close()
+    def latest_run_id(self) -> str | None:
+        row = self._conn.execute("SELECT run_id FROM runs ORDER BY started_at DESC LIMIT 1").fetchone()
+        return None if row is None else str(row["run_id"])
+
+    def _fetch_one(self, query: str, params: tuple[Any, ...]) -> dict[str, Any] | None:
+        row = self._conn.execute(query, params).fetchone()
+        return None if row is None else self._decode_row(dict(row))
+
+    def _fetch_many(self, query: str, params: tuple[Any, ...]) -> list[dict[str, Any]]:
+        rows = self._conn.execute(query, params).fetchall()
+        return [self._decode_row(dict(row)) for row in rows]
 
     @staticmethod
     def _serialize(value: Any) -> Any:
@@ -311,6 +547,7 @@ class SqliteRecorder:
             "decision_json",
             "execution_plan_json",
             "details_json",
+            "meta_json",
         ):
             value = row.get(key)
             if isinstance(value, str) and value:

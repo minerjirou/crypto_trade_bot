@@ -1,15 +1,30 @@
 from __future__ import annotations
 
+import asyncio
+import json
 import unittest
 from datetime import datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 
+from crypto_bot.adapters.registry import build_adapter
+from crypto_bot.collectors.demo import generate_demo_snapshots
+from crypto_bot.collectors.replay import load_replay_snapshots
+from crypto_bot.core.config import RiskSettings, Settings
 from crypto_bot.core.events import AgentNote, RunRecord
-from crypto_bot.core.config import RiskSettings
-from crypto_bot.core.models import ExchangeName, FeatureSnapshot, Instrument, MarketSnapshot, SignalCandidate, SignalSide, UTC
+from crypto_bot.core.models import (
+    ExchangeName,
+    FeatureSnapshot,
+    Instrument,
+    MarketSnapshot,
+    SignalCandidate,
+    SignalSide,
+    UTC,
+)
+from crypto_bot.core.runner import TradingSession
 from crypto_bot.features.basis import FeatureEngine
 from crypto_bot.risk.engine import AccountState, RiskEngine
+from crypto_bot.storage.report import ReportBuilder
 from crypto_bot.storage.sqlite import SqliteRecorder
 
 
@@ -187,6 +202,62 @@ class BasisAndRiskTests(unittest.TestCase):
         self.assertEqual(bundle["journal"][0]["symbol"], "ALTUSDT")
         self.assertEqual(bundle["journal"][0]["candidate_json"]["side"], "long")
         self.assertEqual(bundle["notes"][0]["details_json"]["next_action"], "review fills")
+
+    def test_replay_loader_reads_jsonl(self) -> None:
+        replay_path = Path("test-output") / "sample-replay.jsonl"
+        replay_path.parent.mkdir(parents=True, exist_ok=True)
+        replay_path.write_text(
+            json.dumps(
+                {
+                    "exchange": "paper",
+                    "symbol": "ALTUSDT",
+                    "spot_bid": "0.99",
+                    "spot_ask": "1.01",
+                    "perp_bid": "0.95",
+                    "perp_ask": "0.97",
+                    "funding_rate": "0.0001",
+                    "volume_24h_usd": "1000000",
+                    "open_interest_usd": "800000",
+                    "depth_usd_at_5bps": "25000",
+                    "observed_at": datetime.now(tz=UTC).isoformat(),
+                }
+            ),
+            encoding="utf-8",
+        )
+        try:
+            snapshots = load_replay_snapshots(replay_path)
+        finally:
+            replay_path.unlink(missing_ok=True)
+        self.assertEqual(len(snapshots), 1)
+        self.assertEqual(snapshots[0].instrument.symbol, "ALTUSDT")
+
+    def test_paper_session_records_outcomes_and_report(self) -> None:
+        settings = Settings.load(Path("config/settings.example.yaml"))
+        db_path = Path("test-output") / "paper-session.db"
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        if db_path.exists():
+            db_path.unlink()
+        settings.storage.sqlite_path = db_path
+        recorder = SqliteRecorder(db_path)
+        try:
+            result = asyncio.run(
+                TradingSession(
+                    settings=settings,
+                    recorder=recorder,
+                    adapter=build_adapter("paper"),
+                    mode="paper",
+                ).run_snapshots(generate_demo_snapshots(exchange=ExchangeName.PAPER), Path("config/settings.example.yaml"))
+            )
+            bundle = recorder.build_analysis_bundle(result.run_id)
+            report = ReportBuilder(recorder).build_run_report(result.run_id)
+        finally:
+            recorder.close()
+            if db_path.exists():
+                db_path.unlink()
+        self.assertGreaterEqual(len(bundle["fills"]), 1)
+        self.assertGreaterEqual(len(bundle["outcomes"]), 1)
+        self.assertGreaterEqual(len(bundle["pnl"]), 1)
+        self.assertIn("net_pnl", report)
 
 
 if __name__ == "__main__":

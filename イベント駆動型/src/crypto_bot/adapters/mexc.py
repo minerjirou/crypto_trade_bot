@@ -4,7 +4,20 @@ from datetime import datetime
 from decimal import Decimal
 
 from crypto_bot.adapters.base import ExchangeAdapter, RateLimiter, fetch_json, with_retry
-from crypto_bot.core.models import ExchangeName, Instrument, OrderAck, OrderIntent, PositionState, UTC
+from crypto_bot.collectors.normalizer import normalize_symbol
+from crypto_bot.core.models import (
+    AmendRequest,
+    CancelAck,
+    CancelRequest,
+    ExchangeName,
+    Instrument,
+    MarketSnapshot,
+    OrderAck,
+    OrderIntent,
+    OrderState,
+    PositionState,
+    UTC,
+)
 
 
 class MexcPublicAdapter(ExchangeAdapter):
@@ -56,11 +69,27 @@ class MexcPublicAdapter(ExchangeAdapter):
     async def fetch_fee_rates(self, symbols: list[str]) -> dict[str, Decimal]:
         return {symbol: Decimal("0.001") for symbol in symbols}
 
+    async def fetch_market_snapshot(self, instrument: Instrument) -> MarketSnapshot | None:
+        return None
+
     async def place_order(self, intent: OrderIntent) -> OrderAck:
         raise NotImplementedError("use dry-run or paper adapter before live trading")
+
+    async def amend_order(self, req: AmendRequest) -> OrderAck:
+        raise NotImplementedError("private API is disabled for MVP")
+
+    async def cancel_order(self, req: CancelRequest) -> CancelAck:
+        raise NotImplementedError("private API is disabled for MVP")
+
+    async def fetch_open_orders(self) -> list[OrderState]:
+        return []
 
     async def cancel_all(self) -> None:
         raise NotImplementedError
 
     async def fetch_positions(self) -> list[PositionState]:
         return []
+
+    @staticmethod
+    def normalize_symbol(raw_symbol: str) -> str:
+        return normalize_symbol(raw_symbol)

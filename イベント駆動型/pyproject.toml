@@ -21,6 +21,9 @@ dev = [
 
 [project.scripts]
 crypto-bot-dry-run = "crypto_bot.cli.run_dry:main"
+crypto-bot-paper = "crypto_bot.cli.run_paper:main"
+crypto-bot-replay = "crypto_bot.cli.replay:main"
+crypto-bot-report = "crypto_bot.cli.report:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

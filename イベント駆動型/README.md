@@ -13,13 +13,18 @@ MVP の主戦略は「新しめアルトの先物-現物乖離 extreme 逆張り
 - Basis Extreme Reversal 戦略の MVP
 - リスク判定
 - 分割エントリー前提の注文計画
-- SQLite へのイベント保存
-- 分析・自己改善向けの run / journal / note 保存
+- exit 判定と reduce-only クローズ
+- paper execution による fill / position / pnl / trade outcome 記録
+- SQLite へのイベント保存と CSV export
+- 分析・自己改善向けの run / journal / note / outcome 保存
 - dry-run CLI
-- MEXC / Bitget adapter の public 骨格
+- paper CLI
+- replay CLI
+- report CLI
+- MEXC / Bitget adapter の public 骨格と adapter registry
 
 まだ本番自動売買の段階ではありません。  
-private API 実装、実約定処理、paper mode の高度化、replay/backtest、live mode はこれからです。
+外部取引所の live private API は feature flag 境界の外に置いてあり、実運用前に取引所仕様ベースで詰める前提です。
 
 ## 戦略の考え方
 
@@ -78,6 +83,27 @@ crypto-bot-dry-run --config config/settings.example.yaml
 
 現在の `dry-run` はサンプル market snapshot を入力として流し、特徴量計算から注文 ACK 保存までを確認するモードです。
 
+paper mode を実行します。
+
+```powershell
+$env:PYTHONPATH = "src"
+python -m crypto_bot.cli.run_paper --config config/settings.example.yaml
+```
+
+replay を実行します。
+
+```powershell
+$env:PYTHONPATH = "src"
+python -m crypto_bot.cli.replay --config config/settings.example.yaml --input path\to\replay.jsonl
+```
+
+最新 run のレポートを表示し、必要なら CSV export も行います。
+
+```powershell
+$env:PYTHONPATH = "src"
+python -m crypto_bot.cli.report --config config/settings.example.yaml --export-csv
+```
+
 ## テスト
 
 ```powershell
@@ -93,12 +119,19 @@ SQLite は `config/settings.example.yaml` の `storage.sqlite_path` に保存さ
 - `events`: 生イベントログ
 - `runs`: 実行単位のメタ情報
 - `signal_journal`: 特徴量、候補、採否、注文計画を横断した分析用テーブル
+- `order_acks`: 発注 ACK の構造化保存
+- `fills`: 約定ログ
+- `position_snapshots`: ポジション推移
+- `pnl_snapshots`: 実現 / 含み / fee の時系列
+- `trade_outcomes`: exit reason を含むトレード結果
 - `agent_notes`: Codex / ClaudeCode などが残す所見や改善メモ
 
 この構成により、あとから以下のような分析がしやすくなります。
 
 - どの `basis_z` / `funding_rate` / `spread_bps` で候補化されたか
 - 採用 / reject の理由は何か
+- どの注文がどの価格で約定したか
+- exit reason ごとの PnL がどうだったか
 - どの設定で run されたか
 - AI が次回改善用に何をメモしたか
 
@@ -142,8 +175,8 @@ SQLite は `config/settings.example.yaml` の `storage.sqlite_path` に保存さ
 
 ## 次の実装候補
 
-- MEXC / Bitget の実データ normalizer
-- private API と paper mode の拡張
-- fill / position / PnL / exit reason の保存
-- replay / backtest
-- kill-switch と reconnect の強化
+- MEXC / Bitget private API の実装と paper/live reconcile
+- 実 WebSocket と reconnect / resubscribe / kill-switch の強化
+- 複数銘柄同時スキャンとランキング
+- recorded market data を使う backtest / parameter sweep
+- 実 fee / slippage モデルの交換所別詳細化

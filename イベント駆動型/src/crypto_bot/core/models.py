@@ -13,7 +13,14 @@ UTC = timezone.utc
 class ExchangeName(str, Enum):
     MEXC = "mexc"
     BITGET = "bitget"
+    BYBIT = "bybit"
+    OKX = "okx"
+    GATE = "gate"
+    COINEX = "coinex"
+    HYPERLIQUID = "hyperliquid"
+    DEXSCREENER = "dexscreener"
     DRY_RUN = "dry_run"
+    PAPER = "paper"
 
 
 class MarketType(str, Enum):
@@ -37,6 +44,14 @@ class TimeInForce(str, Enum):
     FOK = "fok"
 
 
+class OrderStatus(str, Enum):
+    NEW = "new"
+    ACCEPTED = "accepted"
+    FILLED = "filled"
+    CANCELED = "canceled"
+    REJECTED = "rejected"
+
+
 class SignalSide(str, Enum):
     LONG = "long"
     SHORT = "short"
@@ -49,6 +64,16 @@ class DecisionReason(str, Enum):
     CONSECUTIVE_LOSS_LIMIT = "consecutive_loss_limit"
     KILL_SWITCH = "kill_switch"
     BELOW_MIN_NOTIONAL = "below_min_notional"
+    SYMBOL_ALREADY_OPEN = "symbol_already_open"
+
+
+class ExitReason(str, Enum):
+    BASIS_MEAN_REVERSION = "basis_mean_reversion"
+    TARGET = "target"
+    STOP = "stop"
+    TIMEOUT = "timeout"
+    THESIS_BROKEN = "thesis_broken"
+    EMERGENCY = "emergency"
 
 
 @dataclass(slots=True)
@@ -68,6 +93,23 @@ class Instrument:
     @property
     def listing_age_days(self) -> int:
         return max(0, (datetime.now(tz=UTC) - self.listing_time).days)
+
+
+@dataclass(slots=True)
+class OrderBookTop:
+    bid_price: Decimal
+    bid_size: Decimal
+    ask_price: Decimal
+    ask_size: Decimal
+    observed_at: datetime
+
+
+@dataclass(slots=True)
+class FundingSnapshot:
+    instrument: Instrument
+    funding_rate: Decimal
+    next_funding_at: datetime | None
+    observed_at: datetime
 
 
 @dataclass(slots=True)
@@ -174,6 +216,40 @@ class OrderAck:
 
 
 @dataclass(slots=True)
+class OrderState:
+    client_order_id: str
+    exchange_order_id: str
+    symbol: str
+    side: OrderSide
+    price: Decimal
+    size: Decimal
+    status: OrderStatus
+    reduce_only: bool
+    post_only: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+@dataclass(slots=True)
+class AmendRequest:
+    client_order_id: str
+    new_price: Decimal | None = None
+    new_size: Decimal | None = None
+
+
+@dataclass(slots=True)
+class CancelRequest:
+    client_order_id: str
+
+
+@dataclass(slots=True)
+class CancelAck:
+    client_order_id: str
+    status: str
+    canceled_at: datetime
+
+
+@dataclass(slots=True)
 class FillEvent:
     client_order_id: str
     exchange_order_id: str
@@ -184,6 +260,8 @@ class FillEvent:
     fee_paid: Decimal
     liquidity: str
     filled_at: datetime
+    reduce_only: bool = False
+    meta: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -196,6 +274,37 @@ class PositionState:
     mark_price: Decimal
     unrealized_pnl: Decimal
     opened_at: datetime
+
+
+@dataclass(slots=True)
+class TradeState:
+    exchange: ExchangeName
+    symbol: str
+    side: SignalSide
+    size: Decimal
+    entry_price: Decimal
+    stop_price: Decimal
+    target_price: Decimal
+    opened_at: datetime
+    max_hold_until: datetime
+    entry_fees_paid: Decimal = Decimal("0")
+
+
+@dataclass(slots=True)
+class TradeOutcome:
+    symbol: str
+    side: SignalSide
+    entry_price: Decimal
+    exit_price: Decimal
+    size: Decimal
+    gross_pnl: Decimal
+    net_pnl: Decimal
+    entry_fees_paid: Decimal
+    exit_fees_paid: Decimal
+    exit_reason: ExitReason
+    opened_at: datetime
+    closed_at: datetime
+    holding_seconds: int
 
 
 @dataclass(slots=True)

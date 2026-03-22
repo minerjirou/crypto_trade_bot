@@ -13,6 +13,7 @@ class AccountState:
     realized_pnl_today: Decimal
     consecutive_losses: int
     open_positions: list[PositionState]
+    fees_paid_today: Decimal = Decimal("0")
     kill_switch_active: bool = False
 
 
@@ -23,6 +24,8 @@ class RiskEngine:
     def evaluate(self, candidate: SignalCandidate, account: AccountState) -> RiskDecision:
         if account.kill_switch_active:
             return RiskDecision(False, DecisionReason.KILL_SWITCH, Decimal("0"), Decimal("0"))
+        if any(position.symbol == candidate.instrument.perp_symbol for position in account.open_positions):
+            return RiskDecision(False, DecisionReason.SYMBOL_ALREADY_OPEN, Decimal("0"), Decimal("0"))
         if len(account.open_positions) >= self._settings.max_concurrent_positions:
             return RiskDecision(False, DecisionReason.MAX_CONCURRENT_POSITIONS, Decimal("0"), Decimal("0"))
         if account.consecutive_losses >= self._settings.max_consecutive_losses:

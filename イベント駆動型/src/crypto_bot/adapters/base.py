@@ -8,7 +8,17 @@ from time import monotonic
 from urllib.error import URLError
 from urllib.request import urlopen
 
-from crypto_bot.core.models import Instrument, OrderAck, OrderIntent, PositionState
+from crypto_bot.core.models import (
+    AmendRequest,
+    CancelAck,
+    CancelRequest,
+    Instrument,
+    MarketSnapshot,
+    OrderAck,
+    OrderIntent,
+    OrderState,
+    PositionState,
+)
 
 
 class ExchangeAdapter:
@@ -24,7 +34,15 @@ class ExchangeAdapter:
 
     async def fetch_fee_rates(self, symbols: list[str]) -> dict[str, Decimal]: ...
 
+    async def fetch_market_snapshot(self, instrument: Instrument) -> MarketSnapshot | None: ...
+
     async def place_order(self, intent: OrderIntent) -> OrderAck: ...
+
+    async def amend_order(self, req: AmendRequest) -> OrderAck: ...
+
+    async def cancel_order(self, req: CancelRequest) -> CancelAck: ...
+
+    async def fetch_open_orders(self) -> list[OrderState]: ...
 
     async def cancel_all(self) -> None: ...
 

@@ -14,7 +14,7 @@ from crypto_bot.storage.sqlite import SqliteRecorder
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Run crypto bot in dry-run mode")
+    parser = argparse.ArgumentParser(description="Run crypto bot in paper mode")
     parser.add_argument("--config", default="config/settings.example.yaml", type=Path)
     return parser
 
@@ -28,10 +28,10 @@ async def run() -> None:
         session = TradingSession(
             settings=settings,
             recorder=recorder,
-            adapter=build_adapter("dry_run"),
-            mode="dry_run",
+            adapter=build_adapter("paper"),
+            mode="paper",
         )
-        await session.run_snapshots(generate_demo_snapshots(exchange=ExchangeName.DRY_RUN), args.config)
+        await session.run_snapshots(generate_demo_snapshots(exchange=ExchangeName.PAPER), args.config)
     finally:
         recorder.close()
 
