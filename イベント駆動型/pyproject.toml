@@ -1,0 +1,47 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "crypto-bot"
+version = "0.1.0"
+description = "Event-driven crypto trading bot MVP"
+requires-python = ">=3.12"
+dependencies = [
+  "PyYAML>=6.0.1",
+]
+
+[project.optional-dependencies]
+dev = [
+  "black>=24.0.0",
+  "mypy>=1.8.0",
+  "pytest>=8.0.0",
+  "ruff>=0.3.0",
+]
+
+[project.scripts]
+crypto-bot-dry-run = "crypto_bot.cli.run_dry:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.black]
+line-length = 100
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "N", "C4"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+packages = ["crypto_bot"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
