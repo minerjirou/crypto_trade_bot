@@ -1,0 +1,57 @@
+app:
+  env: dev
+  timezone: UTC
+  dry_run: true
+  paper_mode: false
+  live_trading: false
+
+universe:
+  exchanges: [mexc, bitget]
+  max_symbols_per_exchange: 200
+  include_only_common_spot_perp: true
+  min_listing_age_days: 30
+  max_listing_age_days: 365
+  min_24h_volume_usd: 500000
+  max_spread_bps: 25
+
+strategy:
+  name: basis_extreme_reversal
+  basis_window: 168
+  entry_z_abs: 2.0
+  exit_z_abs: 0.25
+  max_hold_minutes: 720
+  use_funding_filter: true
+  funding_block_long_above: 0.0005
+  funding_block_short_below: -0.0005
+
+risk:
+  risk_per_trade_pct: 0.01
+  max_daily_loss_pct: 0.04
+  max_concurrent_positions: 2
+  max_leverage: 3
+  max_consecutive_losses: 3
+
+execution:
+  prefer_post_only: true
+  entry_slices: 2
+  order_ttl_seconds: 20
+  emergency_taker_close: true
+  cancel_all_on_disconnect: true
+
+fees:
+  default:
+    spot_maker: 0.0010
+    spot_taker: 0.0010
+    perp_maker: 0.0002
+    perp_taker: 0.0006
+  overrides:
+    mexc:
+      enabled: true
+      symbols: {}
+    bitget:
+      enabled: true
+      symbols: {}
+
+storage:
+  sqlite_path: ./data/bot.db
+  export_dir: ./exports
