@@ -1,0 +1,20 @@
+strategy:
+  tokyo_start: 0
+  tokyo_end: 7
+  london_end: 15
+  buffer_pips: 3.0
+  risk_reward: 1.5
+  min_range_pips: 10
+  max_range_pips: 100
+backtest:
+  spread_pips: 1.0
+  slippage_pips: 0.5
+instruments:
+  USD_JPY:
+    pip_size: 0.01
+  EUR_USD:
+    pip_size: 0.0001
+  GBP_USD:
+    pip_size: 0.0001
+  GBP_JPY:
+    pip_size: 0.01

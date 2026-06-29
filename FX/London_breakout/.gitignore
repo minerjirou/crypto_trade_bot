@@ -1,0 +1,9 @@
+.env
+data/*.csv
+results/
+__pycache__/
+*.pyc
+.pytest_cache/
+notebooks/.ipynb_checkpoints/
+venv/
+.codex/

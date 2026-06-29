@@ -2,11 +2,15 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import unittest
 from datetime import datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 
+from crypto_bot.adapters.bitget import BitgetPublicAdapter
+from crypto_bot.adapters.live_support import ManagedWebSocketConnection
+from crypto_bot.adapters.mexc import MexcPublicAdapter
 from crypto_bot.adapters.registry import build_adapter
 from crypto_bot.collectors.demo import generate_demo_snapshots
 from crypto_bot.collectors.replay import load_replay_snapshots
@@ -258,6 +262,35 @@ class BasisAndRiskTests(unittest.TestCase):
         self.assertGreaterEqual(len(bundle["outcomes"]), 1)
         self.assertGreaterEqual(len(bundle["pnl"]), 1)
         self.assertIn("net_pnl", report)
+
+    def test_live_ws_subscription_bookkeeping(self) -> None:
+        connection = ManagedWebSocketConnection(
+            url="wss://example.invalid/ws",
+            name="test-ws",
+            ping_interval_seconds=30,
+        )
+        asyncio.run(connection.subscribe({"op": "subscribe", "args": [{"channel": "ticker"}]}))
+        self.assertEqual(len(connection._subscriptions), 1)  # noqa: SLF001
+
+    def test_mexc_and_bitget_login_payloads(self) -> None:
+        old_env = dict(os.environ)
+        try:
+            os.environ["MEXC_API_KEY"] = "key"
+            os.environ["MEXC_API_SECRET"] = "secret"
+            os.environ["BITGET_API_KEY"] = "key"
+            os.environ["BITGET_API_SECRET"] = "secret"
+            os.environ["BITGET_API_PASSPHRASE"] = "pass"
+            mexc = MexcPublicAdapter()
+            bitget = BitgetPublicAdapter()
+            mexc_login = mexc._private_login_payload()  # noqa: SLF001
+            bitget_login = bitget._private_login_payload()  # noqa: SLF001
+        finally:
+            os.environ.clear()
+            os.environ.update(old_env)
+        assert mexc_login is not None
+        assert bitget_login is not None
+        self.assertEqual(mexc_login["method"], "login")
+        self.assertEqual(bitget_login["op"], "login")
 
 
 if __name__ == "__main__":

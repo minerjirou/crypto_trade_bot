@@ -1,62 +1,59 @@
 # crypto-bot
 
-小資金向けのイベント駆動型暗号資産トレーディング bot です。  
-MVP の主戦略は「新しめアルトの先物-現物乖離 extreme 逆張り + Funding フィルタ」で、まずは `dry-run` / `paper mode` を完成させる前提で実装しています。
+300 USD 規模を想定した、イベント駆動型の暗号資産トレーディング bot です。  
+主戦略は「新しめアルトの先物-現物乖離 extreme 逆張り + Funding フィルタ」で、まずは `dry-run` と `paper` を回しながら戦略・記録・分析基盤を固める構成です。
 
-## 現在の状態
-
-現時点では、以下まで実装済みです。
+## いま動くもの
 
 - 設定ファイル読み込み
 - 共通ドメインモデル
-- basis / z-score ベースの特徴量計算
-- Basis Extreme Reversal 戦略の MVP
+- basis / rolling z-score 特徴量計算
+- Basis Extreme Reversal 戦略
 - リスク判定
-- 分割エントリー前提の注文計画
+- 分割エントリー計画
 - exit 判定と reduce-only クローズ
-- paper execution による fill / position / pnl / trade outcome 記録
-- SQLite へのイベント保存と CSV export
-- 分析・自己改善向けの run / journal / note / outcome 保存
-- dry-run CLI
-- paper CLI
-- replay CLI
-- report CLI
-- MEXC / Bitget adapter の public 骨格と adapter registry
+- dry-run execution
+- paper execution
+- replay 実行
+- report / CSV export
+- SQLite への run / signal / order / fill / pnl / outcome / note 保存
+- MEXC / Bitget public adapter の骨格
+- adapter registry
+- symbol normalizer
 
-まだ本番自動売買の段階ではありません。  
-外部取引所の live private API は feature flag 境界の外に置いてあり、実運用前に取引所仕様ベースで詰める前提です。
+## まだ未実装のもの
 
-## 戦略の考え方
+- MEXC / Bitget の live private API
+- 実 WebSocket reconnect / resubscribe
+- 本番自動売買
+- 複数銘柄の実スキャンとランキング
+- 実取引所データによる継続稼働パス
+- 本格的な backtest / parameter sweep
 
-- `basis = perp_mid / spot_mid - 1`
-- rolling mean / std から `basis_z` を計算
-- `abs(basis_z)` が大きい局面だけ候補化
-- Funding を悪条件フィルタとして使用
-- 上場後日数、出来高、スプレッド、板厚を考慮
-- リスク条件を満たした場合のみ注文計画を生成
+現状は「ローカルで dry-run / paper / replay を回し、結果を保存・分析する」ところまでは通っています。
 
-小資金前提のため、常時売買ではなく「条件成立時だけ動く」構成を重視しています。
-
-## ディレクトリ構成
+## 構成
 
 ```text
 config/                 設定例
-docs/                   仕様書
+docs/                   要件・設計書
+exports/                report --export-csv の出力先
 src/crypto_bot/
   adapters/             取引所 adapter
-  cli/                  CLI
-  core/                 設定・モデル・イベント・ロギング
+  cli/                  dry-run / paper / replay / report
+  collectors/           demo / replay / normalizer
+  core/                 設定・モデル・runner・イベント・ロギング
   execution/            注文計画
-  features/             basis / z-score 計算
+  features/             basis / z-score
   risk/                 リスク判定
-  storage/              SQLite recorder
+  storage/              SQLite / report / export
   strategies/           売買戦略
 tests/                  ユニットテスト
 ```
 
 ## セットアップ
 
-Python `3.12+` を前提にしています。
+Python `3.12+` 前提です。
 
 ```powershell
 python -m venv .venv
@@ -64,45 +61,116 @@ python -m venv .venv
 python -m pip install -e .[dev]
 ```
 
-依存を最小にしているため、最初は `PyYAML` のみで動作します。
+## 実行モード
 
-## 実行
+`dry-run`
 
-dry-run を実行します。
+- 注文 ACK まで確認する軽量モード
+- fill は発生しない
+- 戦略と記録の流れを手早く確認する用途
 
 ```powershell
 $env:PYTHONPATH = "src"
 python -m crypto_bot.cli.run_dry --config config/settings.example.yaml
 ```
 
-またはエントリーポイントを使います。
+または:
 
 ```powershell
 crypto-bot-dry-run --config config/settings.example.yaml
 ```
 
-現在の `dry-run` はサンプル market snapshot を入力として流し、特徴量計算から注文 ACK 保存までを確認するモードです。
+`paper`
 
-paper mode を実行します。
+- 約定、ポジション、PnL、trade outcome までシミュレートする
+- 現状で一番実用的な検証モード
 
 ```powershell
 $env:PYTHONPATH = "src"
 python -m crypto_bot.cli.run_paper --config config/settings.example.yaml
 ```
 
-replay を実行します。
+または:
+
+```powershell
+crypto-bot-paper --config config/settings.example.yaml
+```
+
+`replay`
+
+- JSONL の market snapshot を再生する
+- recorded data に対して deterministic に挙動確認したいときに使う
 
 ```powershell
 $env:PYTHONPATH = "src"
 python -m crypto_bot.cli.replay --config config/settings.example.yaml --input path\to\replay.jsonl
 ```
 
-最新 run のレポートを表示し、必要なら CSV export も行います。
+または:
+
+```powershell
+crypto-bot-replay --config config/settings.example.yaml --input path\to\replay.jsonl
+```
+
+`report`
+
+- 最新 run か指定 run の集計を表示する
+- 必要なら CSV export も行う
 
 ```powershell
 $env:PYTHONPATH = "src"
 python -m crypto_bot.cli.report --config config/settings.example.yaml --export-csv
 ```
+
+または:
+
+```powershell
+crypto-bot-report --config config/settings.example.yaml --export-csv
+```
+
+## 保存されるデータ
+
+SQLite は `config/settings.example.yaml` の `storage.sqlite_path` に保存されます。  
+主なテーブル:
+
+- `events`: 生イベントログ
+- `runs`: 実行単位のメタ情報
+- `signal_journal`: 特徴量、候補、採否、執行計画を横断した分析用テーブル
+- `order_acks`: 発注 ACK
+- `fills`: 約定
+- `position_snapshots`: ポジション推移
+- `pnl_snapshots`: 実現 / 含み / fee の時系列
+- `trade_outcomes`: exit reason を含むトレード結果
+- `agent_notes`: Codex / ClaudeCode 向けメモ
+
+`SqliteRecorder.build_analysis_bundle(run_id)` で、特定 run の分析データをまとめて取り出せます。
+
+## CSV export
+
+`report --export-csv` を実行すると `exports/` に run ごとの CSV が出ます。
+
+例:
+
+- `*_journal.csv`
+- `*_orders.csv`
+- `*_fills.csv`
+- `*_pnl.csv`
+- `*_outcomes.csv`
+- `*_notes.csv`
+
+これをそのまま AI に読ませて、reject 理由、entry 条件、exit 条件、PnL の偏りを分析できます。
+
+## 設定
+
+設定例は [config/settings.example.yaml](c:\Users\Y_Kofuji\Documents\プログラム置き場\仮想通貨bot\イベント駆動型\config\settings.example.yaml) にあります。主な項目:
+
+- `app`: 実行モードの基本設定
+- `universe`: 上場日数、出来高、スプレッドなどの対象条件
+- `strategy`: basis window、entry / exit z-score、funding filter
+- `risk`: 1 トレード損失、日次損失、同時保有数、連敗制限
+- `execution`: post-only、分割数、TTL、緊急クローズ設定
+- `fees`: デフォルト fee と exchange 上書き
+- `storage`: SQLite / export の出力先
 
 ## テスト
 
@@ -111,58 +179,28 @@ $env:PYTHONPATH = "src"
 python -m unittest discover -s tests -v
 ```
 
-## 保存されるデータ
+現状のテストでは、以下を確認しています。
 
-SQLite は `config/settings.example.yaml` の `storage.sqlite_path` に保存されます。  
-主なテーブルは以下です。
-
-- `events`: 生イベントログ
-- `runs`: 実行単位のメタ情報
-- `signal_journal`: 特徴量、候補、採否、注文計画を横断した分析用テーブル
-- `order_acks`: 発注 ACK の構造化保存
-- `fills`: 約定ログ
-- `position_snapshots`: ポジション推移
-- `pnl_snapshots`: 実現 / 含み / fee の時系列
-- `trade_outcomes`: exit reason を含むトレード結果
-- `agent_notes`: Codex / ClaudeCode などが残す所見や改善メモ
-
-この構成により、あとから以下のような分析がしやすくなります。
-
-- どの `basis_z` / `funding_rate` / `spread_bps` で候補化されたか
-- 採用 / reject の理由は何か
-- どの注文がどの価格で約定したか
-- exit reason ごとの PnL がどうだったか
-- どの設定で run されたか
-- AI が次回改善用に何をメモしたか
-
-`SqliteRecorder.build_analysis_bundle(run_id)` を使うと、特定 run の分析データをまとめて取り出せます。
-
-## 設定
-
-設定例は `config/settings.example.yaml` にあります。主な項目:
-
-- `app`: 実行モード
-- `universe`: 対象銘柄条件
-- `strategy`: basis 戦略パラメータ
-- `risk`: 1 トレード損失、日次損失、同時保有数など
-- `execution`: post-only、分割数、TTL など
-- `fees`: 手数料のデフォルト値と取引所上書き
-- `storage`: SQLite 保存先
+- basis / z-score 計算
+- リスク制限
+- SQLite 分析バンドル生成
+- replay ローダー
+- paper session の fill / outcome / report
 
 ## 開発方針
 
 - Python 3.12+
 - 型ヒント必須
-- `Decimal` で金額処理
-- JSON 構造化ログ
+- 金額は `Decimal`
+- ログは JSON 構造化
 - UTC 基準で保存
-- adapter / strategy / risk / storage を分離
+- `adapter / strategy / risk / storage` を分離
 - 外部 API 呼び出しには timeout / retry / rate-limit を入れる
-- まず dry-run / paper mode を固め、その後 live を有効化する
+- dry-run / paper を固めてから live を有効化する
 
 ## 仕様書
 
-設計意図や要件は `docs/` にまとまっています。
+詳細な要件と設計意図は `docs/` にあります。
 
 - `docs/01_PRD.md`
 - `docs/02_REQUIREMENTS.md`
@@ -173,10 +211,10 @@ SQLite は `config/settings.example.yaml` の `storage.sqlite_path` に保存さ
 - `docs/07_TEST_PLAN.md`
 - `docs/08_TASK_BREAKDOWN.md`
 
-## 次の実装候補
+## 次に詰めるべきところ
 
-- MEXC / Bitget private API の実装と paper/live reconcile
-- 実 WebSocket と reconnect / resubscribe / kill-switch の強化
-- 複数銘柄同時スキャンとランキング
-- recorded market data を使う backtest / parameter sweep
-- 実 fee / slippage モデルの交換所別詳細化
+- MEXC / Bitget private API
+- 実 WS market data と reconnect 制御
+- 複数銘柄ランキング
+- 実 fill ベースの fee / slippage 詳細化
+- recorded data を使う backtest 強化

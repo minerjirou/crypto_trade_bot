@@ -8,6 +8,7 @@ version = "0.1.0"
 description = "Event-driven crypto trading bot MVP"
 requires-python = ">=3.12"
 dependencies = [
+  "aiohttp>=3.10.0",
   "PyYAML>=6.0.1",
 ]
 
